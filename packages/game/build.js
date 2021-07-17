@@ -1,0 +1,8 @@
+require("esbuild")
+  .build({
+    plugins: [require("@yarnpkg/esbuild-plugin-pnp").pnpPlugin()],
+    entryPoints: ["./src/index.ts"],
+    bundle: true,
+    outfile: "./dist/bundle.js",
+  })
+  .catch(() => process.exit(1));

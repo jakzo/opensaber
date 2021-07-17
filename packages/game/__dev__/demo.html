@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <title>OpenSaber Dev</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+    <script>
+      {
+        const ws = new WebSocket("ws://localhost:11123");
+        ws.addEventListener("open", () => {
+          console.log("Live reload server connected");
+        });
+        ws.addEventListener("message", (evt) => {
+          if (evt.data === "reload") {
+            window.location.reload();
+            console.log("Received reload message from server...");
+          }
+        });
+        ws.addEventListener("close", () => {
+          console.warn("Live reload server disconnected");
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <script src="dist/bundle.js"></script>
+  </body>
+</html>
