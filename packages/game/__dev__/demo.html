@@ -15,23 +15,6 @@
         height: 100%;
       }
     </style>
-    <script>
-      {
-        const ws = new WebSocket("ws://localhost:11123");
-        ws.addEventListener("open", () => {
-          console.log("Live reload server connected");
-        });
-        ws.addEventListener("message", (evt) => {
-          if (evt.data === "reload") {
-            window.location.reload();
-            console.log("Received reload message from server...");
-          }
-        });
-        ws.addEventListener("close", () => {
-          console.warn("Live reload server disconnected");
-        });
-      }
-    </script>
   </head>
   <body>
     <script src="dist/bundle.js"></script>

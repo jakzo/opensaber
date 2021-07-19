@@ -1,24 +1,31 @@
 const path = require("path");
 
-const { pnpPlugin } = require("@yarnpkg/esbuild-plugin-pnp");
 const esbuild = require("esbuild");
-// const { Server } = require("ws");
+const { Server } = require("ws");
 
-// const wss = new Server({ port: 11123 });
+const { esbuildOpts } = require("../build");
+
+const wss = new Server({ port: 11123 });
 
 esbuild
   .build({
-    plugins: [pnpPlugin()],
+    ...esbuildOpts,
+    // Can remove the local copy once this PR is merged
+    // https://github.com/yarnpkg/berry/pull/2919
+    plugins: [require("./esbuild-pnp").pnpPlugin()],
     entryPoints: [path.join(__dirname, "index.ts")],
-    bundle: true,
     outfile: path.join(__dirname, "dist", "bundle.js"),
-    // Not working?
-    // watch: {
-    //   onRebuild(err, result) {
-    //     if (err) console.error("watch build failed:", err);
-    //     else console.log("watch build succeeded:", result);
-    //     for (const ws of wss.clients) ws.send("reload");
-    //   },
-    // },
+    minify: false,
+    watch: {
+      onRebuild(err) {
+        if (!err) {
+          console.log("Rebuild succeeded");
+          for (const ws of wss.clients) ws.send("reload");
+        } else {
+          console.error("Rebuild failed");
+        }
+      },
+    },
   })
-  .catch(() => process.exit(1));
+  .then(() => console.log("Build succeeded"))
+  .catch(() => console.error("Build failed"));

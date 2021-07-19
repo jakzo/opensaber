@@ -1,0 +1,5 @@
+releases:
+  "@opensaber/game": patch
+
+declined:
+  - "@opensaber/monorepo"
