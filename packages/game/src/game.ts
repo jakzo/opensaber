@@ -211,6 +211,7 @@ const createGameObj = (
       const obj = baseBlock.clone();
       obj.position.x = levelObj.x;
       obj.position.y = levelState.playerHeightY + levelObj.y;
+      obj.rotateZ((levelObj.rot / 360) * Math.PI * 2);
       levelState.parentObj.add(obj);
       levelState.gameObjects.set(levelObj, obj);
       return obj;

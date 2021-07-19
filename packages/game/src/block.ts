@@ -47,9 +47,9 @@ export const createBlockMeshes = (
     };
     return {
       arrow: createMesh((ctx) => {
-        ctx.moveTo(10, 10);
-        ctx.lineTo(90, 10);
-        ctx.lineTo(50, 40);
+        ctx.moveTo(10, 90);
+        ctx.lineTo(90, 90);
+        ctx.lineTo(50, 60);
         ctx.fill();
       }),
       dot: createMesh((ctx) => {

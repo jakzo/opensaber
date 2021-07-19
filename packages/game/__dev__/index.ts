@@ -33,22 +33,38 @@ const sampleLevel: Level = {
   maps: {
     standard: [
       {
-        objects: [...Array(10).keys()].flatMap((i) => [
-          {
-            time: i * 2000 + 3000,
-            type: LevelObjectType.BLOCK_LEFT,
-            x: -1,
-            y: -1,
-            rot: 180,
-          },
-          {
-            time: i * 2000 + 4000,
-            type: LevelObjectType.BLOCK_RIGHT,
-            x: 1,
-            y: -1,
-            rot: 180,
-          },
-        ]),
+        objects: [...Array(3)]
+          .flatMap(() =>
+            [
+              {
+                x: -1,
+                y: -1,
+                rot: 180,
+              },
+              {
+                x: -2,
+                y: 0,
+                rot: 90,
+              },
+              {
+                x: -1,
+                y: 1,
+                rot: 45,
+              },
+            ].flatMap((obj) => [
+              {
+                type: LevelObjectType.BLOCK_LEFT,
+                ...obj,
+              },
+              {
+                type: LevelObjectType.BLOCK_RIGHT,
+                x: -obj.x,
+                y: -obj.y,
+                rot: (obj.rot + 180) % 360,
+              },
+            ])
+          )
+          .map((obj, i) => ({ ...obj, time: 1000 + i * 500 })),
       },
     ],
   },
