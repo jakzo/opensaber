@@ -1,29 +1,34 @@
 import * as THREE from "three";
 
 import { LevelObjectType, LevelObjectTypeBlock } from "./level";
+import { withDefaults } from "./utils";
 
-type BlockColors = Record<LevelObjectTypeBlock, number>;
+export type BlockColors = Record<LevelObjectTypeBlock, number>;
 
-const BLOCK_TEXTURE_SIZE = 512;
-const BLOCK_COLORS_DEFAULT: BlockColors = {
-  [LevelObjectType.BLOCK_LEFT]: 0xff3333,
-  [LevelObjectType.BLOCK_RIGHT]: 0x3333ff,
-};
-const BLOCK_SIZE_DEFAULT = 0.8;
-
-export type MeshCacheBlocks = Record<
+export type BlockMeshes = Record<
   LevelObjectTypeBlock,
   Record<"arrow" | "dot", THREE.Mesh>
 >;
 
-export const createBlockMeshes = (
-  blockColors: BlockColors = BLOCK_COLORS_DEFAULT,
-  blockSize = BLOCK_SIZE_DEFAULT
-): MeshCacheBlocks => {
-  const geometry = new THREE.BoxGeometry(blockSize, blockSize, blockSize);
-  const createMeshes = (
-    color: number
-  ): MeshCacheBlocks[LevelObjectTypeBlock] => {
+export interface BlockOpts {
+  blockColors: BlockColors;
+  width: number;
+}
+
+export const BLOCK_DEFAULT_OPTS: BlockOpts = {
+  blockColors: {
+    [LevelObjectType.BLOCK_LEFT]: 0xff3333,
+    [LevelObjectType.BLOCK_RIGHT]: 0x3333ff,
+  },
+  width: 0.5,
+};
+
+const BLOCK_TEXTURE_SIZE = 512;
+
+export const createBlockMeshes = (opts: Partial<BlockOpts>): BlockMeshes => {
+  const { blockColors, width } = withDefaults(BLOCK_DEFAULT_OPTS, opts);
+  const geometry = new THREE.BoxGeometry(width, width, width);
+  const createMeshes = (color: number): BlockMeshes[LevelObjectTypeBlock] => {
     const side = new THREE.MeshPhongMaterial({ color });
     const createMesh = (
       draw: (ctx: CanvasRenderingContext2D) => void
@@ -41,15 +46,15 @@ export const createBlockMeshes = (
         side,
         side,
         side,
-        side,
         new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(canvas) }),
+        side,
       ]);
     };
     return {
       arrow: createMesh((ctx) => {
-        ctx.moveTo(10, 90);
-        ctx.lineTo(90, 90);
-        ctx.lineTo(50, 60);
+        ctx.moveTo(10, 10);
+        ctx.lineTo(90, 10);
+        ctx.lineTo(50, 40);
         ctx.fill();
       }),
       dot: createMesh((ctx) => {

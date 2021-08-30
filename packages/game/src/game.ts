@@ -1,223 +1,158 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import Stats from "three/examples/jsm/libs/stats.module";
+import { VRButton } from "three/examples/jsm/webxr/VRButton";
+import { XRControllerModelFactory } from "three/examples/jsm/webxr/XRControllerModelFactory";
 
-import { MeshCacheBlocks, createBlockMeshes } from "./block";
-import {
-  Level,
-  LevelDifficulty,
-  LevelObject,
-  LevelObjectType,
-  LevelType,
-} from "./level";
-import { createStage } from "./stage";
-
-type SomeRequired<T, RequiredK extends keyof T> = Pick<T, RequiredK> &
-  Partial<Omit<T, RequiredK>>;
+import { LevelStateOpts } from "./LevelState";
+import { PlayLevel } from "./PlayLevel";
+import { Playable } from "./Playable";
+import { Replay, ReplayOpts } from "./Replay";
+import { createEnvironment } from "./environment";
 
 export interface GameOpts {
   container: HTMLElement;
   showStats?: boolean;
 }
 
-export interface Game {
-  startGame(): Game;
-  stopGame(): Game;
-  startLevel(
-    opts: SomeRequired<LevelStateOpts, "level" | "type" | "difficulty">
-  ): Game;
-}
+export class Game {
+  stats: Stats | undefined;
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  renderer: THREE.WebGLRenderer;
+  playable?: Playable;
+  timePrev: number | undefined;
+  controllers: THREE.Group[];
 
-interface LevelStateOpts {
-  level: Level;
-  type: LevelType | string;
-  difficulty: LevelDifficulty;
-  /** Start position in the level in seconds. Can be negative. */
-  startTime: number;
-  /** Speed the level is playing at with 1.0 being normal speed. */
-  speed: number;
-  /** If the level is currently playing (ie. not paused). */
-  isPlaying: boolean;
-}
-/** This contains level state including internal state like 3D objects which are
- * in the scene. */
-interface LevelState extends LevelStateOpts {
-  gameObjects: Map<LevelObject, THREE.Object3D>;
-  /** Index of the first object in `difficulty.objects` which is currently
-   * rendered. If no objects are currently rendered it is 0. If there are no
-   * more objects it is the length of `difficulty.objects`. */
-  objIdx: number;
-  meshCache: { blocks: MeshCacheBlocks };
-  /** Current position in the level in seconds. Can be negative. */
-  time: number;
-  /** The distance in meters objects spawn in front of the player. */
-  jumpOffset: number;
-  /** Speed that objects move in meters per second. */
-  objSpeed: number;
-  parentObj: THREE.Object3D;
-  /** Y position of eyes when player is at full height. */
-  playerHeightY: number;
-}
+  fakeHeadset = new THREE.Object3D();
+  isStopped = true;
 
-/** Distance behind the player that objects disappear at. */
-const REAR_DESPAWN_DISTANCE = 5;
+  constructor(opts: GameOpts) {
+    this.scene = new THREE.Scene();
 
-export const createGame = (opts: GameOpts): Game => {
-  const scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+    this.camera.position.set(0, 1.6, 1);
+    this.camera.lookAt(0, 0, -1000);
 
-  const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-  camera.position.set(0, 1.6, 0);
-  camera.lookAt(0, 0, 1000);
+    const ambientLight = new THREE.AmbientLight(0xcccccc, 0.4);
+    this.scene.add(ambientLight);
 
-  const ambientLight = new THREE.AmbientLight(0xcccccc, 0.4);
-  scene.add(ambientLight);
+    for (const [x, y, z] of [
+      [2, 2, 0],
+      [-2, 2, 0],
+    ]) {
+      const light = new THREE.DirectionalLight(0xffffff, 0.4);
+      light.position.set(x, y, z);
+      this.scene.add(light);
+    }
 
-  for (const [x, y, z] of [
-    [2, 2, 0],
-    [-2, 2, 0],
-  ]) {
-    const light = new THREE.DirectionalLight(0xffffff, 0.4);
-    light.position.set(x, y, z);
-    scene.add(light);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.xr.enabled = true;
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    const setSize = (): void => {
+      this.camera.aspect = window.innerWidth / window.innerHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(
+        opts.container.clientWidth,
+        opts.container.clientHeight
+      );
+    };
+    setSize();
+    new ResizeObserver(setSize).observe(opts.container);
+    opts.container.append(this.renderer.domElement);
+    opts.container.appendChild(VRButton.createButton(this.renderer));
+
+    const controllerModelFactory = new XRControllerModelFactory();
+    for (const i of [0, 1]) {
+      const controller = this.renderer.xr.getControllerGrip(i);
+      controller.add(controllerModelFactory.createControllerModel(controller));
+      this.scene.add(controller);
+    }
+
+    this.stats = opts.showStats ? Stats() : undefined;
+    if (this.stats) opts.container.appendChild(this.stats.dom);
+
+    const environment = createEnvironment();
+    this.scene.add(environment);
+
+    const orbitControls = new OrbitControls(
+      this.camera,
+      this.renderer.domElement
+    );
+    orbitControls.target = new THREE.Vector3(0, 1, -10);
+    orbitControls.update();
+
+    this.controllers = [0, 1].map((i) => {
+      const controller = this.renderer.xr.getControllerGrip(i);
+      controller.addEventListener("connected", () => {
+        this.scene.add(controller);
+      });
+      controller.addEventListener("disconnected", () => {
+        this.scene.remove(controller);
+      });
+      return controller;
+    });
   }
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
-  const setSize = (): void => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(opts.container.clientWidth, opts.container.clientHeight);
-  };
-  setSize();
-  new ResizeObserver(setSize).observe(opts.container);
-  opts.container.append(renderer.domElement);
+  protected animate = (time: number): void => {
+    this.stats?.begin();
 
-  const stats = opts.showStats ? Stats() : undefined;
-  if (stats) opts.container.appendChild(stats.dom);
+    if (this.timePrev === undefined) this.timePrev = time;
 
-  const stage = createStage();
-  scene.add(stage);
-
-  const orbitControls = new OrbitControls(camera, renderer.domElement);
-  orbitControls.target = new THREE.Vector3(0, 1, 10);
-  orbitControls.update();
-
-  let levelState: LevelState | undefined;
-  let timePrev: number | undefined;
-
-  let animationFrameHandle: number | undefined;
-  const animate = (time: number): void => {
-    stats?.begin();
-    animationFrameHandle = requestAnimationFrame(animate);
-
-    if (timePrev === undefined) timePrev = time;
-    const timeDelta = (time - timePrev) / 1000;
-
-    const playerZ = 0;
-
-    if (levelState) {
-      const untouchedObjs = new Set(levelState.gameObjects.keys());
-      const levelObjects = levelState.difficulty.objects;
-      if (levelState.isPlaying) levelState.time += timeDelta * levelState.speed;
-      if (levelState.objIdx < levelObjects.length) {
-        for (let i = levelState.objIdx; i < levelObjects.length; i++) {
-          const lo = levelObjects[i];
-          const z = (levelState.time - lo.time / 1000) * levelState.objSpeed;
-          // TODO: This should be different to z for walls
-          const zEnd = z;
-          if (zEnd > REAR_DESPAWN_DISTANCE) {
-            levelState.objIdx = i + 1;
-            continue;
-          }
-          if (z < -levelState.jumpOffset) break;
-          const go = getGameObj(levelState, lo);
-          go.position.z = -z + playerZ;
-          untouchedObjs.delete(lo);
-        }
-      }
-
-      for (const lo of untouchedObjs) {
-        levelState.gameObjects.get(lo)?.removeFromParent();
-        levelState.gameObjects.delete(lo);
-      }
+    if (this.playable) {
+      const timeDelta = (time - this.timePrev) / 1000;
+      this.playable.animate(timeDelta, {
+        headset: !this.renderer.xr.isPresenting
+          ? this.fakeHeadset
+          : this.camera,
+        controllers: this.controllers,
+      });
     }
 
-    renderer.render(scene, camera);
+    this.renderer.render(this.scene, this.camera);
 
-    timePrev = time;
-
-    stats?.end();
+    this.timePrev = time;
+    this.stats?.end();
   };
 
-  const game: Game = {
-    startGame() {
-      if (animationFrameHandle === undefined)
-        animationFrameHandle = requestAnimationFrame(animate);
-      return game;
-    },
-    stopGame() {
-      if (animationFrameHandle !== undefined) {
-        cancelAnimationFrame(animationFrameHandle);
-        animationFrameHandle = undefined;
-      }
-      return game;
-    },
-    startLevel({
-      level,
-      type,
-      difficulty,
-      startTime = -1,
-      speed = 1,
-      isPlaying = true,
-    }: LevelStateOpts) {
-      levelState = {
-        level,
-        type,
-        difficulty,
-        startTime,
-        speed,
-        isPlaying,
-        gameObjects: new Map<LevelObject, THREE.Object3D>(),
-        objIdx: 0,
-        meshCache: { blocks: createBlockMeshes() },
-        time: startTime,
-        jumpOffset: difficulty.jumpOffset ?? 20,
-        objSpeed: difficulty.speed ?? 5,
-        parentObj: new THREE.Object3D(),
-        playerHeightY: 1.6,
-      };
-      scene.add(levelState.parentObj);
-      return game;
-    },
-  };
-  return game;
-};
-
-const getGameObj = (
-  levelState: LevelState,
-  levelObj: LevelObject
-): THREE.Object3D =>
-  levelState.gameObjects.get(levelObj) || createGameObj(levelState, levelObj);
-
-const createGameObj = (
-  levelState: LevelState,
-  levelObj: LevelObject
-): THREE.Object3D => {
-  switch (levelObj.type) {
-    case LevelObjectType.BLOCK_LEFT:
-    case LevelObjectType.BLOCK_RIGHT: {
-      const blocks = levelState.meshCache.blocks[levelObj.type];
-      const baseBlock = levelObj.anyDir ? blocks.dot : blocks.arrow;
-      const obj = baseBlock.clone();
-      obj.position.x = levelObj.x;
-      obj.position.y = levelState.playerHeightY + levelObj.y;
-      obj.rotateZ((levelObj.rot / 360) * Math.PI * 2);
-      levelState.parentObj.add(obj);
-      levelState.gameObjects.set(levelObj, obj);
-      return obj;
-    }
-    default: {
-      throw new Error(`Unknown level object of type: ${levelObj.type}`);
-    }
+  startGame(): Game {
+    this.renderer.setAnimationLoop(this.animate);
+    if (this.playable) this.playable.setStopped(false);
+    this.timePrev = undefined;
+    this.isStopped = false;
+    return this;
   }
-};
+
+  stopGame(): Game {
+    this.renderer.setAnimationLoop(null);
+    if (this.playable) this.playable.setStopped(true);
+    this.timePrev = undefined;
+    this.isStopped = true;
+    return this;
+  }
+
+  async playLevel(
+    opts: LevelStateOpts
+  ): Promise<{ createRecording: PlayLevel["createRecording"] }> {
+    const playLevel = new PlayLevel({
+      levelState: opts,
+      controllers: this.controllers,
+    });
+    this.scene.add(playLevel.obj);
+    this.playable = playLevel;
+    await playLevel.levelState.promise;
+    return { createRecording: playLevel.createRecording.bind(playLevel) };
+  }
+
+  async playbackRecording(
+    opts: Omit<ReplayOpts, "headset"> & { headsetPerspective?: boolean }
+  ): Promise<void> {
+    const replay = new Replay({
+      ...opts,
+      headset: opts.headsetPerspective ? this.camera : undefined,
+    });
+    this.scene.add(replay.obj);
+    this.playable = replay;
+    await replay.levelState.promise;
+  }
+}

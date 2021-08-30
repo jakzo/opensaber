@@ -4,6 +4,7 @@
   "exclude": ["**/__*__/**/*"],
   "compilerOptions": {
     "noEmit": false,
+    "module": "ESNext",
     "baseUrl": ".",
     "rootDir": "./src",
     "outDir": "./dist",

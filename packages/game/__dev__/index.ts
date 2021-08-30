@@ -1,79 +1,94 @@
-import { createGame } from "../src/game";
-import { Level, LevelObjectType } from "../src/level";
+import { Game } from "../src/Game";
+import { readBeatsaberMap } from "../src/import-beatsaber";
+import { startCollisionDebugger } from "./collision-debugger";
 
-{
+void (async () => {
+  let devWs: WebSocket;
   let retryTime = 1000;
   const connect = (isReconnect: boolean): void => {
-    const liveReloadWs = new WebSocket(
-      `ws://${window.location.host || "localhost"}:11123`
+    devWs = new WebSocket(
+      `ws://${window.location.hostname || "localhost"}:11123`
     );
-    liveReloadWs.addEventListener("open", () => {
-      console.log(`Live reload server ${isReconnect ? "re" : ""}connected`);
+    devWs.addEventListener("open", () => {
+      console.log(`Dev server ${isReconnect ? "re" : ""}connected`);
       retryTime = 1000;
     });
-    liveReloadWs.addEventListener("message", (evt) => {
+    devWs.addEventListener("message", (evt) => {
       if (evt.data === "reload") {
-        console.log("Received reload message from server...");
+        console.log("Received reload message from dev server...");
         window.location.reload();
       }
     });
-    liveReloadWs.addEventListener("close", () => {
-      if (!isReconnect) console.warn("Live reload server disconnected");
+    devWs.addEventListener("close", () => {
+      if (!isReconnect) console.warn("Dev server disconnected");
       retryTime = Math.min(retryTime * 1.2, 60 * 1000);
       setTimeout(() => connect(true), retryTime);
     });
   };
   connect(false);
-}
 
-const sampleLevel: Level = {
-  title: "Sample Level",
-  artist: "jakzo",
-  mapper: "jakzo",
-  maps: {
-    standard: [
-      {
-        objects: [...Array(3)]
-          .flatMap(() =>
-            [
-              {
-                x: -1,
-                y: -1,
-                rot: 180,
-              },
-              {
-                x: -2,
-                y: 0,
-                rot: 90,
-              },
-              {
-                x: -1,
-                y: 1,
-                rot: 45,
-              },
-            ].flatMap((obj) => [
-              {
-                type: LevelObjectType.BLOCK_LEFT,
-                ...obj,
-              },
-              {
-                type: LevelObjectType.BLOCK_RIGHT,
-                x: -obj.x,
-                y: -obj.y,
-                rot: (obj.rot + 180) % 360,
-              },
-            ])
-          )
-          .map((obj, i) => ({ ...obj, time: 1000 + i * 500 })),
-      },
-    ],
-  },
-};
+  const SHOW_COLLISION_DEBUGGER = false;
 
-createGame({ container: document.body, showStats: true })
-  .startGame()
-  .startLevel({
-    level: sampleLevel,
-    type: "standard",
-    difficulty: sampleLevel.maps.standard[0],
-  });
+  if (SHOW_COLLISION_DEBUGGER) {
+    startCollisionDebugger(document.body);
+  } else {
+    const resSong = await fetch("./testing/you_and_i.zip");
+    const mapZip = await resSong.arrayBuffer();
+    const sampleLevel = await readBeatsaberMap(mapZip);
+    const resRecording = await fetch("./testing/recording.bin");
+    const arrayBuffer = await resRecording.arrayBuffer();
+    const recording = new Float64Array(arrayBuffer);
+    const game = new Game({
+      container: document.body,
+      showStats: true,
+    }).startGame();
+    setTimeout(() => game.stopGame(), 100);
+
+    const PLAY_RECORDING = true;
+
+    const startLevel = async (): Promise<void> => {
+      document.removeEventListener("mousedown", startLevel);
+      game.startGame();
+      if (PLAY_RECORDING) {
+        await game.playbackRecording({
+          levelState: {
+            level: sampleLevel,
+            type: "standard",
+            difficulty: sampleLevel.maps.standard[2],
+            startTime: 0,
+            speed: 1,
+          },
+          recording,
+          headsetPerspective: false,
+        });
+      } else {
+        const { createRecording } = await game.playLevel({
+          level: sampleLevel,
+          type: "standard",
+          difficulty: sampleLevel.maps.standard[2],
+          startTime: 0,
+          speed: 1,
+        });
+        const recording = createRecording();
+        console.log("Sending recording...");
+        devWs.send(
+          JSON.stringify({
+            recording: btoa(
+              new Uint8Array(recording.buffer).reduce(
+                (str, byte) => str + String.fromCharCode(byte),
+                ""
+              )
+            ),
+          })
+        );
+      }
+    };
+    document.addEventListener("mousedown", startLevel);
+    document.addEventListener("keydown", (evt) => {
+      if (evt.key === " ") {
+        if (game.isStopped) game.startGame();
+        else game.stopGame();
+      }
+    });
+  }
+})();

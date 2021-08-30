@@ -7,6 +7,7 @@ export interface Level {
   artist: string;
   /** Name of the user that created this level. */
   mapper: string;
+  audio: HTMLAudioElement;
   /** Level definitions grouped by type (eg. standard or 360) and difficulty. */
   maps: Record<LevelType | string, LevelDifficulty[]>;
   /** Custom data used by mods. */
